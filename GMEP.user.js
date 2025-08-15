@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Maps Enhanced Photos
 // @namespace    https://github.com/gncnpk/google-maps-enhanced-photos
-// @version      0.0.1
+// @version      0.0.2
 // @description  Filter photos and videos in Google Maps contributions
 // @author       Gavin Canon-Phratsachack (https://github.com/gncnpk)
 // @match        https://www.google.com/maps/*
@@ -36,6 +36,115 @@
 
     // Place tracking
     let availablePlaces = new Set();
+
+    // Multi-language photo and video keywords
+    const PHOTO_KEYWORDS = [
+        // English
+        'photo', 'picture', 'image', 'pic',
+        // German
+        'foto', 'bild',
+        // French
+        'photo', 'image',
+        // Spanish
+        'foto', 'imagen',
+        // Italian
+        'foto', 'immagine',
+        // Portuguese
+        'foto', 'imagem',
+        // Dutch
+        'foto', 'afbeelding',
+        // Russian
+        'фото',
+        // Japanese
+        '写真', 'しゃしん',
+        // Chinese (Simplified & Traditional)
+        '照片', '相片',
+        // Korean
+        '사진',
+        // Arabic
+        'صورة',
+        // Polish
+        'zdjęcie', 'foto',
+        // Czech
+        'fotografie', 'obrázek',
+        // Swedish
+        'foto', 'bild',
+        // Norwegian
+        'foto', 'bilde',
+        // Danish
+        'foto', 'billede',
+        // Finnish
+        'kuva', 'valokuva',
+        // Hungarian
+        'fotó', 'kép',
+        // Turkish
+        'fotoğraf', 'resim',
+        // Hebrew
+        'תמונה'
+    ];
+
+    const VIDEO_KEYWORDS = [
+        // English
+        'video', 'movie', 'clip',
+        // German
+        'video', 'film',
+        // French
+        'vidéo', 'film',
+        // Spanish
+        'vídeo', 'video', 'película',
+        // Italian
+        'video', 'filmato',
+        // Portuguese
+        'vídeo', 'filme',
+        // Dutch
+        'video', 'film',
+        // Russian
+        'видео',
+        // Japanese
+        'ビデオ', '動画', 'びでお', 'どうが',
+        // Chinese (Simplified & Traditional)
+        '视频', '影片', '錄像',
+        // Korean
+        '비디오', '영상',
+        // Arabic
+        'فيديو',
+        // Polish
+        'wideo', 'film',
+        // Czech
+        'video', 'film',
+        // Swedish
+        'video', 'film',
+        // Norwegian
+        'video', 'film',
+        // Danish
+        'video', 'film',
+        // Finnish
+        'video', 'elokuva',
+        // Hungarian
+        'videó', 'film',
+        // Turkish
+        'video', 'film',
+        // Hebrew
+        'וידאו', 'סרטון'
+    ];
+
+    // Function to check if an aria-label contains photo keywords
+    function hasPhotoKeyword(ariaLabel) {
+        if (!ariaLabel) return false;
+        const lowerLabel = ariaLabel.toLowerCase();
+        return PHOTO_KEYWORDS.some(keyword =>
+            lowerLabel.includes(keyword.toLowerCase())
+        );
+    }
+
+    // Function to check if an aria-label contains video keywords
+    function hasVideoKeyword(ariaLabel) {
+        if (!ariaLabel) return false;
+        const lowerLabel = ariaLabel.toLowerCase();
+        return VIDEO_KEYWORDS.some(keyword =>
+            lowerLabel.includes(keyword.toLowerCase())
+        );
+    }
 
     // Inject CSS
     const style = document.createElement('style');
@@ -140,8 +249,13 @@
         const containers = document.querySelectorAll('.m6QErb.XiKgde');
 
         for (let container of containers) {
-            // Check if container has photo/video items
-            const hasMedia = container.querySelector('.xUc6Hf[aria-label*="Photo"]') || container.querySelector('.xUc6Hf[aria-label*="Video"]');
+            // Check if container has photo/video items using our keyword functions
+            const mediaElements = container.querySelectorAll('.xUc6Hf[aria-label]');
+            const hasMedia = Array.from(mediaElements).some(el =>
+                hasPhotoKeyword(el.getAttribute('aria-label')) ||
+                hasVideoKeyword(el.getAttribute('aria-label'))
+            );
+
             if (hasMedia && container.children.length > 5) { // Reasonable threshold
                 return container;
             }
@@ -166,9 +280,17 @@
         // Fallback: find any scrollable container with media
         const scrollableElements = Array.from(document.querySelectorAll('*')).filter(el => {
             const style = getComputedStyle(el);
-            return (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
-                el.scrollHeight > el.clientHeight &&
-                el.querySelector('.xUc6Hf[aria-label*="Photo"], .xUc6Hf[aria-label*="Video"]');
+            const hasScrollableY = (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+                el.scrollHeight > el.clientHeight;
+
+            if (!hasScrollableY) return false;
+
+            // Check for media using our keyword functions
+            const mediaElements = el.querySelectorAll('.xUc6Hf[aria-label]');
+            return Array.from(mediaElements).some(element =>
+                hasPhotoKeyword(element.getAttribute('aria-label')) ||
+                hasVideoKeyword(element.getAttribute('aria-label'))
+            );
         });
 
         return scrollableElements.length > 0 ? scrollableElements[0] : null;
@@ -321,8 +443,15 @@
         }
 
         Array.from(contentContainer.children).forEach(item => {
-            const hasPhoto = Boolean(item.querySelector('.xUc6Hf[aria-label*="Photo"]'));
-            const hasVideo = Boolean(item.querySelector('.xUc6Hf[aria-label*="Video"]'));
+            // Use our keyword functions to detect photos and videos
+            const mediaElements = item.querySelectorAll('.xUc6Hf[aria-label]');
+            const hasPhoto = Array.from(mediaElements).some(el =>
+                hasPhotoKeyword(el.getAttribute('aria-label'))
+            );
+            const hasVideo = Array.from(mediaElements).some(el =>
+                hasVideoKeyword(el.getAttribute('aria-label'))
+            );
+
             const itemPlace = getPlaceFromPost(item);
 
             let visible = true;
@@ -363,11 +492,16 @@
         let videoCount = 0;
 
         visibleItems.forEach(item => {
-            const photoElements = item.querySelectorAll('.xUc6Hf[aria-label*="Photo"]');
-            const videoElements = item.querySelectorAll('.xUc6Hf[aria-label*="Video"]');
+            const mediaElements = item.querySelectorAll('.xUc6Hf[aria-label]');
 
-            photoCount += photoElements.length;
-            videoCount += videoElements.length;
+            Array.from(mediaElements).forEach(element => {
+                const ariaLabel = element.getAttribute('aria-label');
+                if (hasPhotoKeyword(ariaLabel)) {
+                    photoCount++;
+                } else if (hasVideoKeyword(ariaLabel)) {
+                    videoCount++;
+                }
+            });
         });
 
         // Update available places
